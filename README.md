@@ -1,36 +1,73 @@
 # ai-rag-template
 
-A Retrieval-Augmented Generation (RAG) service built with FastAPI and
-LlamaIndex. Part of an AI Engineering learning track.
+> **Engineering report** — a Retrieval-Augmented Generation (RAG) service that answers
+> questions strictly from your own documents, with a built-in evaluation gate.
+> Part of the AI Engineering learning track by Nick Yakim.
 
-## What it does
-Ingests documents (`.md` / `.pdf`), indexes them into a vector store, and answers
-questions strictly from that data — reducing model hallucination by grounding
-responses in retrieved context.
+## 1. Problem & goal
+LLMs hallucinate when they lack context. This service grounds every answer in
+retrieved documents, so responses stay factual. The goal: a small, production-shaped
+RAG that proves the full pattern — ingest → index → retrieve → generate → evaluate.
 
-## Run locally
+## 2. Architecture
+
+```mermaid
+flowchart LR
+  subgraph IDX[Indexing  once]
+    D[Docs .md/.pdf] --> CH[Chunk ~800 tok]
+    CH --> EM[Embed API]
+    EM --> VS[(Vector Store)]
+  end
+  subgraph Q[Query  live]
+    U[User] --> QE[Embed query]
+    QE --> RT[Retrieve top-k]
+    VS --> RT
+    RT --> CT[Context in prompt]
+    CT --> LLM[LLM]
+    LLM --> ANS[Answer]
+  end
+  ANS --> EV[Eval: faithfulness]
+  EV -->|<0.8| AL[Alert / retune]
+```
+
+```
+        ┌────────────┐     ┌──────────────┐     ┌──────────────┐
+ user ──▶│  FastAPI  │────▶│ Vector Store │◀────│  Ingestion   │
+         │  /ask     │     │  (Chroma)    │     │  chunk+embed │
+         └────┬──────┘     └──────┬───────┘     └──────────────┘
+              │                   │ top-k contexts
+              │                   ▼
+              │            ┌──────────────┐
+              └───────────▶│     LLM      │──▶ answer + eval gate
+                           └──────────────┘
+```
+
+## 3. Components
+- `app.py` — FastAPI service, `/ask` (POST) and `/health`.
+- `rag.py` — builds the LlamaIndex query engine from `data/`.
+- `eval.py` — RAGAS-style faithfulness gate; **CI fails if faithfulness < 0.8**.
+- `data/` — drop your `.md`/`.pdf` here to index.
+- `tests/` — smoke test for the app.
+
+## 4. Run
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-# drop .md/.pdf files into data/
 uvicorn app:app --port 8000
 curl -X POST localhost:8000/ask -H 'Content-Type: application/json' \
   -d '{"question":"how do I create a VPC?"}'
 ```
 
-## Evaluation gate
-```bash
-python eval.py   # exits non-zero if faithfulness < 0.8 (CI blocks bad deploys)
-```
+## 5. Evaluation & CI
+`python eval.py` computes faithfulness; the GitHub Actions pipeline
+(`.github/workflows/ci.yml`, least-privilege + pinned actions) blocks merges
+that drop below threshold. This is what separates a demo from an engineering
+artifact.
 
-## Docker
+## 6. Docker
 ```bash
 docker build -t rag-app . && docker run -p 8000:8000 rag-app
 ```
 
-## CI
-GitHub Actions (`.github/workflows/ci.yml`) runs syntax checks + `pytest` on
-every push, with least-privilege permissions and pinned action versions.
-
 ## Author
-Nick Yakim — github.com/yakim-nick
+Nick Yakim — [github.com/yakim-nick](https://github.com/yakim-nick)
