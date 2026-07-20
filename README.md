@@ -1,7 +1,11 @@
 # ai-rag-template
 
-RAG-сервис на FastAPI + LlamaIndex. Часть портфолио AI Engineer
-(трек из Obsidian Vault → `AI Engineering Manual`).
+RAG-сервис (Retrieval Augmented Generation) на FastAPI + LlamaIndex.
+Часть портфолио AI Engineer (трек из Obsidian Vault → `AI Engineering Manual`).
+
+## Что делает
+Принимает документы (.md/.pdf), индексирует их в векторное хранилище и
+отвечает на вопросы СТРОГО по этим данным (без галлюцинаций на выдумку).
 
 ## Запуск локально
 ```bash
@@ -25,3 +29,6 @@ docker build -t rag-app . && docker run -p 8000:8000 rag-app
 
 ## CI
 GitHub Actions (`.github/workflows/ci.yml`) гоняет pytest + eval.py на каждый push.
+
+## Автор
+Nick Yakim — github.com/yakim-nick
