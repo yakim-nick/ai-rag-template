@@ -1,25 +1,26 @@
 # ai-rag-template
 
-RAG-сервис (Retrieval Augmented Generation) на FastAPI + LlamaIndex.
-Часть портфолио AI Engineer (трек из Obsidian Vault → `AI Engineering Manual`).
+A Retrieval-Augmented Generation (RAG) service built with FastAPI and
+LlamaIndex. Part of an AI Engineering learning track.
 
-## Что делает
-Принимает документы (.md/.pdf), индексирует их в векторное хранилище и
-отвечает на вопросы СТРОГО по этим данным (без галлюцинаций на выдумку).
+## What it does
+Ingests documents (`.md` / `.pdf`), indexes them into a vector store, and answers
+questions strictly from that data — reducing model hallucination by grounding
+responses in retrieved context.
 
-## Запуск локально
+## Run locally
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-# положи .md/.pdf в data/
+# drop .md/.pdf files into data/
 uvicorn app:app --port 8000
 curl -X POST localhost:8000/ask -H 'Content-Type: application/json' \
-  -d '{"question":"как создать VPC?"}'
+  -d '{"question":"how do I create a VPC?"}'
 ```
 
-## Eval gate
+## Evaluation gate
 ```bash
-python eval.py   # faithfulness >= 0.8 иначе exit 1 (CI не пустит деплой)
+python eval.py   # exits non-zero if faithfulness < 0.8 (CI blocks bad deploys)
 ```
 
 ## Docker
@@ -28,7 +29,8 @@ docker build -t rag-app . && docker run -p 8000:8000 rag-app
 ```
 
 ## CI
-GitHub Actions (`.github/workflows/ci.yml`) гоняет pytest + eval.py на каждый push.
+GitHub Actions (`.github/workflows/ci.yml`) runs syntax checks + `pytest` on
+every push, with least-privilege permissions and pinned action versions.
 
-## Автор
+## Author
 Nick Yakim — github.com/yakim-nick
