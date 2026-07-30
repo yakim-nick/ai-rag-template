@@ -46,10 +46,11 @@ flowchart LR
 - `app.py` — FastAPI service, `/ask` (POST) and `/health`.
 - `rag.py` — builds the LlamaIndex query engine from `data/`.
 - `eval.py` — RAGAS-style faithfulness gate; **CI fails if faithfulness < 0.8**.
+- `ui/app.py` — Streamlit UI for interactive Q&A (see §7).
 - `data/` — drop your `.md`/`.pdf` here to index.
 - `tests/` — smoke test for the app.
 
-## 4. Run
+## 4. Run (API)
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
@@ -64,10 +65,44 @@ curl -X POST localhost:8000/ask -H 'Content-Type: application/json' \
 that drop below threshold. This is what separates a demo from an engineering
 artifact.
 
-## 6. Docker
+## 6. Docker (API)
 ```bash
 docker build -t rag-app . && docker run -p 8000:8000 rag-app
 ```
+
+## 7. Streamlit UI
+
+A browsable chat interface that wraps the same RAG engine.  Upload documents,
+ask questions, and see responses in real time.
+
+### 7.1 Run locally
+```bash
+streamlit run ui/app.py
+```
+
+Open http://localhost:8501 in your browser.
+
+### 7.2 Docker
+```bash
+docker build -t rag-ui -f ui/Dockerfile . && docker run -p 8501:8501 rag-ui
+```
+
+### 7.3 Usage
+
+| Area     | What you can do                                          |
+|----------|----------------------------------------------------------|
+| Sidebar  | Upload `.md` / `.pdf` / `.txt` / `.csv` files            |
+| Sidebar  | Browse currently indexed documents                       |
+| Sidebar  | See engine readiness status                              |
+| Main     | Type a question and press Enter                          |
+| Main     | Scroll through full conversation history                 |
+| Main     | Errors and warnings are displayed inline                 |
+
+### 7.4 Environment
+
+The UI reuses the same `rag.build_engine()` call as the API, so it respects
+the same environment — set `OPENAI_API_KEY` (or whichever LLM provider your
+`llama-index` configuration uses) before launching.
 
 ## Author
 Nick Yakim — [github.com/yakim-nick](https://github.com/yakim-nick)

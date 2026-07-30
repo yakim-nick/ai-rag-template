@@ -5,3 +5,4 @@ chromadb
 ragas
 datasets
 pytest
+streamlit
