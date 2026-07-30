@@ -3,7 +3,12 @@ from pydantic import BaseModel
 from rag import build_engine
 
 app = FastAPI()
-engine = build_engine("data/")
+
+
+def get_engine():
+    if not hasattr(app, "_engine"):
+        app._engine = build_engine("data/")
+    return app._engine
 
 
 class Q(BaseModel):
@@ -12,7 +17,7 @@ class Q(BaseModel):
 
 @app.post("/ask")
 def ask(q: Q):
-    return {"answer": engine.query(q.question).response}
+    return {"answer": get_engine().query(q.question).response}
 
 
 @app.get("/health")
