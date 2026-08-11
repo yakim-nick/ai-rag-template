@@ -1,5 +1,7 @@
 # ai-rag-template
 
+[![CI](https://github.com/yakim-nick/ai-rag-template/actions/workflows/ci.yml/badge.svg)](https://github.com/yakim-nick/ai-rag-template/actions/workflows/ci.yml)
+
 > **Engineering report** — a Retrieval-Augmented Generation (RAG) service that answers
 > questions strictly from your own documents, with a built-in evaluation gate.
 > Part of the AI Engineering learning track by Nick Yakim.
