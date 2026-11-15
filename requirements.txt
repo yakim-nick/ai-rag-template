@@ -1,8 +1,9 @@
-fastapi
-uvicorn
-llama-index
-chromadb
-ragas
-datasets
-pytest
-streamlit
+# Direct dependencies pinned to the versions the tests were run with (Nov 2026).
+# Transitive dependencies are not pinned; use a lock tool for fully reproducible builds.
+fastapi==0.163.1
+uvicorn==0.54.0
+pydantic==2.14.3
+llama-index==0.14.26
+openai==1.109.1
+ragas==0.4.4
+streamlit==1.67.0

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from functools import lru_cache
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -43,6 +44,16 @@ def get_engine() -> BaseQueryEngine:
         ) from exc
 
 
+def engine_provider() -> Callable[[], BaseQueryEngine]:
+    """Dependency returning the *function* that gets the engine.
+
+    The engine is fetched inside the handler, after the request body has been
+    validated. If it were a direct dependency, FastAPI would build the (costly)
+    index before reporting a 422 for a bad question.
+    """
+    return get_engine
+
+
 class AskRequest(BaseModel):
     """Request body for the ``/ask`` endpoint."""
 
@@ -59,9 +70,11 @@ class AskRequest(BaseModel):
 
 @app.post("/ask")
 def ask_question(
-    request: AskRequest, engine: BaseQueryEngine = Depends(get_engine)  # noqa: B008
+    request: AskRequest,
+    provider: Callable[[], BaseQueryEngine] = Depends(engine_provider),  # noqa: B008
 ) -> dict[str, str]:
     """Answer a question using the RAG engine."""
+    engine = provider()
     try:
         return {"answer": generate_answer(engine, request.question)}
     except Exception as exc:
