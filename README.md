@@ -2,109 +2,112 @@
 
 [![CI](https://github.com/yakim-nick/ai-rag-template/actions/workflows/ci.yml/badge.svg)](https://github.com/yakim-nick/ai-rag-template/actions/workflows/ci.yml)
 
-> **Engineering report** — a Retrieval-Augmented Generation (RAG) service that answers
-> questions strictly from your own documents, with a built-in evaluation gate.
-> Part of the AI Engineering learning track by Nick Yakim.
+A small Retrieval-Augmented Generation (RAG) API: put `.md`, `.pdf`, `.txt` or
+`.csv` files in `data/`, ask questions over HTTP (FastAPI) or in a Streamlit UI,
+and get answers that LlamaIndex builds from the retrieved document chunks.
 
-## 1. Problem & goal
-LLMs hallucinate when they lack context. This service grounds every answer in
-retrieved documents, so responses stay factual. The goal: a small, production-shaped
-RAG that proves the full pattern — ingest → index → retrieve → generate → evaluate.
+It is a learning project, not a production service. See
+[Known limitations](#known-limitations).
 
-## 2. Architecture
+## How it works
 
 ```mermaid
 flowchart LR
-  subgraph IDX[Indexing  once]
-    D[Docs .md/.pdf] --> CH[Chunk ~800 tok]
-    CH --> EM[Embed API]
-    EM --> VS[(Vector Store)]
+  subgraph IDX["Indexing (on first request)"]
+    D["data/ files"] --> CH["Split: 1024-token chunks, 200 overlap"]
+    CH --> EM["Embed (OpenAI by default)"]
+    EM --> VS[("In-memory vector index")]
   end
-  subgraph Q[Query  live]
-    U[User] --> QE[Embed query]
-    QE --> RT[Retrieve top-k]
+  subgraph Q["Query (POST /ask)"]
+    U["Question"] --> QE["Embed question"]
+    QE --> RT["Retrieve top 2 chunks"]
     VS --> RT
-    RT --> CT[Context in prompt]
-    CT --> LLM[LLM]
-    LLM --> ANS[Answer]
+    RT --> LLM["LLM answers from the chunks"]
+    LLM --> ANS["Answer"]
   end
-  ANS --> EV[Eval: faithfulness]
-  EV -->|<0.8| AL[Alert / retune]
 ```
 
-```
-        ┌────────────┐     ┌──────────────┐     ┌──────────────┐
- user ──▶│  FastAPI  │────▶│ Vector Store │◀────│  Ingestion   │
-         │  /ask     │     │  (Chroma)    │     │  chunk+embed │
-         └────┬──────┘     └──────┬───────┘     └──────────────┘
-              │                   │ top-k contexts
-              │                   ▼
-              │            ┌──────────────┐
-              └───────────▶│     LLM      │──▶ answer + eval gate
-                           └──────────────┘
-```
+- The index is built lazily on the first `/ask` and kept in memory. It is **not
+  persisted**, so it is rebuilt (and re-embedded, which costs API calls) after
+  every restart.
+- Embeddings and the LLM are LlamaIndex's defaults, which use OpenAI. You need
+  `OPENAI_API_KEY`.
 
-## 3. Components
-- `app.py` — FastAPI service, `/ask` (POST) and `/health`.
-- `rag.py` — builds the LlamaIndex query engine from `data/`.
-- `eval.py` — RAGAS-style faithfulness gate; **CI fails if faithfulness < 0.8**.
-- `ui/app.py` — Streamlit UI for interactive Q&A (see §7).
-- `data/` — drop your `.md`/`.pdf` here to index.
-- `tests/` — smoke test for the app.
+## Components
 
-## 4. Run (API)
+- `app.py`: FastAPI service. `POST /ask`, `GET /health`. The engine is injected as a
+  dependency, so tests run with a fake engine.
+- `rag.py`: builds the LlamaIndex query engine from a directory.
+- `services.py`: `generate_answer(engine, question)`.
+- `eval.py`: manual faithfulness check (see [Evaluation](#evaluation)).
+- `ui/app.py`: Streamlit chat UI with document upload.
+- `data/`: documents to index. `data/terraform-vpc.md` is a small sample.
+- `tests/`: 27 tests, no network or API key needed.
+
+## Run (API)
+
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env            # then put your real key in .env
+export OPENAI_API_KEY=sk-...    # the API reads the environment, not .env
 uvicorn app:app --port 8000
 curl -X POST localhost:8000/ask -H 'Content-Type: application/json' \
-  -d '{"question":"how do I create a VPC?"}'
+  -d '{"question":"How do I create a VPC with Terraform?"}'
 ```
 
-## 5. Evaluation & CI
-`python eval.py` computes faithfulness; the GitHub Actions pipeline
-(`.github/workflows/ci.yml`, least-privilege + pinned actions) blocks merges
-that drop below threshold. This is what separates a demo from an engineering
-artifact.
+Responses: `200 {"answer": ...}`, `422` for a blank or over-long (> 1000 chars)
+question, `503` if the engine cannot be built (missing key, unreadable `data/`),
+`502` if the model call fails. Error bodies do not include upstream details.
 
-## 6. Docker (API)
+## Streamlit UI
+
 ```bash
-docker build -t rag-app . && docker run -p 8000:8000 rag-app
+streamlit run ui/app.py         # http://localhost:8501
 ```
 
-## 7. Streamlit UI
+Upload `.md/.pdf/.txt/.csv` files (max 10 MB, file names are sanitised so they
+stay inside `data/`), browse indexed documents and chat. The UI builds its own
+engine in-process; it does not call the API.
 
-A browsable chat interface that wraps the same RAG engine.  Upload documents,
-ask questions, and see responses in real time.
+## Docker
 
-### 7.1 Run locally
 ```bash
-streamlit run ui/app.py
+docker compose up --build       # api on :8000, ui on :8501, reads .env
 ```
 
-Open http://localhost:8501 in your browser.
+## Evaluation
 
-### 7.2 Docker
+`python eval.py` scores answers with RAGAS faithfulness against a threshold of
+0.8. **It is a manual script, not part of CI**, and today it scores one
+hard-coded placeholder example rather than answers produced by this engine. It
+also needs `OPENAI_API_KEY`. Replacing the placeholder with real engine output
+is on the Roadmap.
+
+## Tests and CI
+
 ```bash
-docker build -t rag-ui -f ui/Dockerfile . && docker run -p 8501:8501 rag-ui
+pip install ruff && ruff check . && python -m pytest -q
 ```
 
-### 7.3 Usage
+CI (`.github/workflows/ci.yml`) runs `ruff` and `pytest` only, with a read-only
+token and actions pinned to commit SHAs. Dependabot is enabled.
 
-| Area     | What you can do                                          |
-|----------|----------------------------------------------------------|
-| Sidebar  | Upload `.md` / `.pdf` / `.txt` / `.csv` files            |
-| Sidebar  | Browse currently indexed documents                       |
-| Sidebar  | See engine readiness status                              |
-| Main     | Type a question and press Enter                          |
-| Main     | Scroll through full conversation history                 |
-| Main     | Errors and warnings are displayed inline                 |
+## Known limitations
 
-### 7.4 Environment
+- No authentication or rate limiting on `/ask`: anyone who can reach it spends
+  your OpenAI credits. Do not expose it publicly as is.
+- The index is in memory only and is built on the first request (slow first call).
+- Answers are not checked for faithfulness at runtime or in CI (see Evaluation).
+- `requirements.txt` is unpinned and lists `chromadb`, which is not used yet.
+- The Docker images run as root and have no healthcheck.
 
-The UI reuses the same `rag.build_engine()` call as the API, so it respects
-the same environment — set `OPENAI_API_KEY` (or whichever LLM provider your
-`llama-index` configuration uses) before launching.
+## Roadmap
+
+- Evaluate real engine answers on a small English golden set and report the score.
+- Persist the index (for example Chroma, which is already a dependency).
+- Pin dependencies, non-root Docker images with healthchecks, API key auth.
 
 ## Author
-Nick Yakim — [github.com/yakim-nick](https://github.com/yakim-nick)
+
+Nick Yakim: [github.com/yakim-nick](https://github.com/yakim-nick)
