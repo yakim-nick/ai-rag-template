@@ -13,6 +13,8 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 # Extensions accepted by the uploader and indexed by the engine.
 # Order matters: it drives the file-picker filter in the uploader.
 ALLOWED_EXTENSIONS = (".pdf", ".md", ".txt", ".csv")
+# Reject uploads larger than this (bytes) so one file cannot fill the disk.
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 # ── Page config ─────────────────────────────────────────────────────────────
 
@@ -43,7 +45,7 @@ def get_engine(_refresh: int) -> object | None:
     """
     try:
         return build_engine(str(DATA_DIR))
-    except Exception:
+    except Exception:  # noqa: BLE001 - the UI must show an error instead of crashing
         return None
 
 
@@ -149,20 +151,42 @@ def _list_documents() -> list[Path]:
     )
 
 
+def _safe_upload_name(name: str) -> str | None:
+    """Return a safe base file name for an upload, or ``None`` if it is not acceptable.
+
+    The browser controls ``name``, so it may contain directories (``../../x``)
+    or an unsupported extension. Only the final path component is kept, hidden
+    files are refused, and the extension must be one the engine can index.
+    """
+    base = Path(name.replace("\\", "/")).name
+    if not base or base.startswith("."):
+        return None
+    if Path(base).suffix.lower() not in ALLOWED_EXTENSIONS:
+        return None
+    return base
+
+
 def _handle_upload(uploaded_file) -> None:
     """Save an uploaded file to the data directory and trigger a rebuild.
 
     The engine is cached by ``engine_refresh``, so incrementing it invalidates
     the cache and forces the next render to re-index the new document.
     """
-    file_path = DATA_DIR / uploaded_file.name
+    safe_name = _safe_upload_name(uploaded_file.name)
+    if safe_name is None:
+        st.error(f"Unsupported file name or type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}")
+        return
+    file_path = DATA_DIR / safe_name
     try:
         file_bytes = uploaded_file.getvalue()
+        if len(file_bytes) > MAX_UPLOAD_BYTES:
+            st.error(f"File too large (limit {MAX_UPLOAD_BYTES // (1024 * 1024)} MB).")
+            return
         file_path.write_bytes(file_bytes)
         st.toast(f"Uploaded **{uploaded_file.name}**", icon="✅")
         st.session_state.engine_refresh += 1
         st.rerun()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - show the error in the UI instead of crashing
         st.error(f"Failed to save file: {exc}")
 
 
@@ -267,7 +291,7 @@ def _generate_answer(prompt: str) -> str | None:
     try:
         response = engine.query(prompt)
         return response.response
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - show the error in the UI instead of crashing
         answer = f"❌ **Error:** {exc}"
         st.error(answer)
         st.session_state.messages.append({"role": "assistant", "content": answer})
