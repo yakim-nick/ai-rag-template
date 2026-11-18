@@ -39,10 +39,10 @@ flowchart LR
   dependency, so tests run with a fake engine.
 - `rag.py`: builds the LlamaIndex query engine from a directory.
 - `services.py`: `generate_answer(engine, question)`.
-- `eval.py`: manual faithfulness check (see [Evaluation](#evaluation)).
+- `eval.py`: manual RAGAS faithfulness check on real engine answers (see [Evaluation](#evaluation)).
 - `ui/app.py`: Streamlit chat UI with document upload.
 - `data/`: documents to index. `data/terraform-vpc.md` is a small sample.
-- `tests/`: 27 tests, no network or API key needed.
+- `tests/`: 34 tests, no network or API key needed.
 
 ## Run (API)
 
@@ -74,20 +74,28 @@ engine in-process; it does not call the API.
 
 ```bash
 docker compose up --build       # api on :8000, ui on :8501, reads .env
+# Images run as a non-root user and report health (docker ps shows 'healthy').
 ```
 
 ## Evaluation
 
-`python eval.py` scores answers with RAGAS faithfulness against a threshold of
-0.8. **It is a manual script, not part of CI**, and today it scores one
-hard-coded placeholder example rather than answers produced by this engine. It
-also needs `OPENAI_API_KEY`. Replacing the placeholder with real engine output
-is on the Roadmap.
+`python eval.py` asks the real engine a few English questions about `data/`
+(`GOLDEN_QUESTIONS`), then scores each answer with RAGAS **faithfulness** (how
+much of the answer is supported by the chunks retrieved for it) using
+`gpt-4o-mini` as the judge. It prints the average and exits non-zero below 0.8.
+
+- It is a **manual** script: it needs `OPENAI_API_KEY`, costs a little money,
+  and is **not run in CI**.
+- The questions only cover the sample document. Add questions for your own files.
+- The unit tests cover collecting answers and contexts, the dataset shape RAGAS
+  accepts, and the pass/fail gate. The RAGAS scoring call itself needs a real key
+  and has not been run against OpenAI by the author yet; with a fake key it
+  reaches the OpenAI call and fails there with an authentication error.
 
 ## Tests and CI
 
 ```bash
-pip install ruff && ruff check . && python -m pytest -q
+pip install -r requirements-dev.txt && ruff check . && python -m pytest -q
 ```
 
 CI (`.github/workflows/ci.yml`) runs `ruff` and `pytest` only, with a read-only
@@ -99,14 +107,15 @@ token and actions pinned to commit SHAs. Dependabot is enabled.
   your OpenAI credits. Do not expose it publicly as is.
 - The index is in memory only and is built on the first request (slow first call).
 - Answers are not checked for faithfulness at runtime or in CI (see Evaluation).
-- `requirements.txt` is unpinned and lists `chromadb`, which is not used yet.
-- The Docker images run as root and have no healthcheck.
+- Direct dependencies are pinned but transitive ones are not (no lock file).
+- Docker images run as uid 1000 with a healthcheck, but `./data` is bind-mounted:
+  if your host user has another uid, fix the folder permissions for UI uploads.
 
 ## Roadmap
 
-- Evaluate real engine answers on a small English golden set and report the score.
-- Persist the index (for example Chroma, which is already a dependency).
-- Pin dependencies, non-root Docker images with healthchecks, API key auth.
+- Run the eval on a schedule or on demand in CI with a repository secret.
+- Persist the index (for example with Chroma) so restarts do not re-embed.
+- API key auth and rate limiting on `/ask`; a lock file for transitive dependencies.
 
 ## Author
 

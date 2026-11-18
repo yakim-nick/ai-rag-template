@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app as app_module
-from app import app, get_engine
+from app import app, engine_provider
 
 
 class FakeEngine:
@@ -32,7 +32,7 @@ def client():
 
 
 def use_engine(engine: FakeEngine) -> None:
-    app.dependency_overrides[get_engine] = lambda: engine
+    app.dependency_overrides[engine_provider] = lambda: lambda: engine
 
 
 def test_ask_returns_the_engine_answer(client):
@@ -74,3 +74,13 @@ def test_engine_build_failure_returns_503(client, monkeypatch):
     res = client.post("/ask", json={"question": "hello"})
     assert res.status_code == 503
     assert "OPENAI_API_KEY" in res.json()["detail"]
+
+
+def test_invalid_question_is_rejected_before_the_engine_is_built(client, monkeypatch):
+    """A bad request must not trigger the expensive index build (regression test)."""
+    built = []
+    app_module._build_cached_engine.cache_clear()
+    monkeypatch.setattr(app_module, "_build_cached_engine", lambda: built.append(1))
+    res = client.post("/ask", json={"question": "   "})
+    assert res.status_code == 422
+    assert built == []
