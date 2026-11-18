@@ -13,7 +13,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ── Mock helpers ────────────────────────────────────────────────────────────
 
 
@@ -306,3 +305,50 @@ def test_no_documents_shows_info(mock_env, tmp_path):
         mock_st.info.assert_called()
     finally:
         app.DATA_DIR = original_data_dir
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("notes.md", "notes.md"),
+        ("../../etc/cron.d/evil.md", "evil.md"),
+        ("..\\..\\win.txt", "win.txt"),
+        ("/abs/path/report.PDF", "report.PDF"),
+        (".hidden.md", None),
+        ("script.sh", None),
+        ("noextension", None),
+        ("", None),
+    ],
+)
+def test_upload_name_is_sanitised(mock_env, name, expected):
+    """Browser-supplied names cannot escape the data directory or use odd types."""
+    app, _, _ = mock_env
+    assert app._safe_upload_name(name) == expected
+
+
+def test_path_traversal_upload_stays_inside_data_dir(mock_env, tmp_path):
+    """A '../' file name is written inside DATA_DIR, never outside it."""
+    app, mock_st, _ = mock_env
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    app.DATA_DIR = data_dir
+
+    mock_file = MagicMock()
+    mock_file.name = "../escaped.md"
+    mock_file.getvalue.return_value = b"x"
+    mock_st.file_uploader.return_value = mock_file
+    app.main()
+
+    assert (data_dir / "escaped.md").exists()
+    assert not (tmp_path / "escaped.md").exists()
+
+
+def test_oversized_upload_is_refused(mock_env, tmp_path):
+    app, mock_st, _ = mock_env
+    app.DATA_DIR = tmp_path
+    mock_file = MagicMock()
+    mock_file.name = "big.md"
+    mock_file.getvalue.return_value = b"x" * (app.MAX_UPLOAD_BYTES + 1)
+    mock_st.file_uploader.return_value = mock_file
+    app.main()
+    assert not (tmp_path / "big.md").exists()
